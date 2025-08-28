@@ -8,13 +8,11 @@ import { AnchorProvider, Program, web3, BN, Idl } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import idl from "@/constants/idl.json";
 
-// Define the account structure
 interface CounterAccount {
   authority: PublicKey;
   count: BN;
 }
 
-// Define the program methods interface
 interface CounterProgram extends Program {
   account: {
     counter: {
