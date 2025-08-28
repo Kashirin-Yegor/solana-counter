@@ -1,12 +1,27 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Button, Card, Typography, notification } from "antd";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
-import { AnchorProvider, Program, web3 } from "@coral-xyz/anchor";
+import { AnchorProvider, Program, web3, BN, Idl } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import idl from "@/constants/idl.json";
+
+// Define the account structure
+interface CounterAccount {
+  authority: PublicKey;
+  count: BN;
+}
+
+// Define the program methods interface
+interface CounterProgram extends Program {
+  account: {
+    counter: {
+      fetch: (address: PublicKey) => Promise<CounterAccount>;
+    };
+  };
+}
 
 const { SystemProgram } = web3;
 const PROGRAM_ID = new PublicKey("CBg8WUVoFPdppuTBDzpUpgY3PG4PbzK8S676PQKXvLy6");
@@ -14,7 +29,7 @@ const PROGRAM_ID = new PublicKey("CBg8WUVoFPdppuTBDzpUpgY3PG4PbzK8S676PQKXvLy6")
 export const HomeClient = () => {
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
-  const [program, setProgram] = useState<Program | null>(null);
+  const [program, setProgram] = useState<CounterProgram | null>(null);
   const [counter, setCounter] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -26,38 +41,38 @@ export const HomeClient = () => {
   useEffect(() => {
     if (!wallet || !connection || !idl) return;
     const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
-    setProgram(new Program(idl as any, provider));
+    setProgram(new Program(idl as Idl, provider) as CounterProgram);
     }, [wallet, connection]);
 
   const getPDA = (authorityPubkey: PublicKey) =>
     PublicKey.findProgramAddressSync([Buffer.from("counter"), authorityPubkey.toBuffer()], PROGRAM_ID)[0];
 
-  async function fetchCount() {
+  const fetchCount = useCallback(async () => {
     if (!wallet || !program) return;
     
     setLoading(true);
     const pda = getPDA(wallet.publicKey!);
     
     try {
-      const acct = await (program.account as any).counter.fetch(pda);
+      const acct = await program.account.counter.fetch(pda);
       setCounter(acct.count.toNumber());
       notification.success({
         message: 'Success',
         description: 'Counter value fetched successfully',
         duration: 2,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching counter:', error);
       setCounter(null);
       notification.error({
         message: 'Error Fetching Counter',
-        description: error?.message || 'Counter not initialized or network error',
+        description: (error as Error)?.message || 'Counter not initialized or network error',
         duration: 4,
       });
     } finally {
       setLoading(false);
     }
-  }
+  }, [wallet, program]);
 
   async function initialize() {
     if (!wallet || !program) return;
@@ -67,7 +82,11 @@ export const HomeClient = () => {
     
     try {
       await program.methods.initialize()
-        .accounts({ counter: pda, authority: wallet.publicKey!, systemProgram: SystemProgram.programId } as any)
+        .accounts({ 
+          counter: pda, 
+          authority: wallet.publicKey!, 
+          systemProgram: SystemProgram.programId 
+        })
         .rpc();
       
       notification.success({
@@ -77,11 +96,11 @@ export const HomeClient = () => {
       });
       
       await fetchCount();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error initializing counter:', error);
       notification.error({
         message: 'Initialization Failed',
-        description: error?.message || 'Failed to initialize counter. Please try again.',
+        description: (error as Error)?.message || 'Failed to initialize counter. Please try again.',
         duration: 5,
       });
     } finally {
@@ -97,7 +116,10 @@ export const HomeClient = () => {
     
     try {
       await program.methods.increment()
-        .accounts({ counter: pda, authority: wallet.publicKey! } as any)
+        .accounts({ 
+          counter: pda, 
+          authority: wallet.publicKey! 
+        })
         .rpc();
       
       notification.success({
@@ -107,11 +129,11 @@ export const HomeClient = () => {
       });
       
       await fetchCount();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error incrementing counter:', error);
       notification.error({
         message: 'Increment Failed',
-        description: error?.message || 'Failed to increment counter. Please try again.',
+        description: (error as Error)?.message || 'Failed to increment counter. Please try again.',
         duration: 5,
       });
     } finally {
@@ -119,7 +141,7 @@ export const HomeClient = () => {
     }
   }
 
-  useEffect(() => { if (wallet && mounted) fetchCount(); }, [wallet, program, mounted]);
+  useEffect(() => { if (wallet && mounted) fetchCount(); }, [wallet, program, mounted, fetchCount]);
 
   if (!mounted) {
     return (
